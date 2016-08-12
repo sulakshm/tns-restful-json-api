@@ -23,7 +23,6 @@ type Account struct {
 	DeviceId	string `json:"device_id"`
 
 	active	bool	// currently logged 
-	token 	string	// active token
 }
 
 func (e* Account) Id() int {
@@ -39,7 +38,7 @@ func (e* Account) String() string {
 }
 
 func (e* Account) Update(o DbEntry) error {
-	n, ok := o.(Account)
+	n, ok := o.(*Account)
 	if !ok {
 		return errors.New("Type assertion failed")
 	}
@@ -56,7 +55,7 @@ func (e* Account) Update(o DbEntry) error {
 
 
 func (e* Account) Delete() error {
-	return (*Accounts).Delete(e.Id())
+	return Accounts.Delete(e.Id())
 }
 
 func (e* Account) Encode(encoder *gob.Encoder) {
@@ -64,6 +63,13 @@ func (e* Account) Encode(encoder *gob.Encoder) {
 	if err != nil {
 		log.Fatal("encode:" , err)
 	}
+}
+
+func (e* Account) Match(username, passwd string) bool {
+	if e.Email == username && e.Password == passwd {
+		return true
+	}
+	return false
 }
 
 func NewAccount(first, last, email, mobile, passwd, devtype, devid string) (Account, error) {
@@ -88,6 +94,9 @@ func (db* AccountsDb) Init(n string) {
 	gob.Register(Account{}) // 
 	db.DbTemplate.Init(n, db)
 	db.Load()
+
+	// finally register handlers
+	RegisterRoutes(acctRoutes)
 }
 
 func (db* AccountsDb) Decode(decoder *gob.Decoder) (*Account, error) {
@@ -162,22 +171,19 @@ func (db* AccountsDb) Commit() {
 	}
 }
 
-// Understand http authorization here...
+func (db* AccountsDb) CredCheck(username, passwd string) (*Account, error) {
+	db.DbTemplate.Lock()
+	defer db.DbTemplate.Unlock()
 
-// Endpoint: POST /v1/account/register, AuthToken: none
-// Endpoint: POST /v1/account/login, Authorization: Basic <>
-//	 Respond with Token.
+	for _, v := range db.DbTemplate.Entry {
+		e := v.(*Account)
+		if e.Match(username, passwd) {
+			return e, nil
+		}
+	}
 
-// Should carry: Authorization: Token <key>
-// Endpoint: POST /v1/account/logout, AuthToken: yes
-
-// Endpoint: POST /v1/account/setpasswd, AuthToken: yes
-// Endpoint: PUT /v1/account/resetpasswd, AuthToken: yes, -d "email=value"
-// Endpoint: PUT /v1/account/users, AuthToken: yes, "update entries of Account"
-// Endpoint: GET /v1/account/users, AuthToken: yes, "get entries of account"
-// Endpoint: DELETE /v1/account/users, AuthToken: yes, "delete entry of account"
-// Endpoint: POST /v1/account/auth/google, -- dropped
-
+	return nil, errors.New("Invalid credentials")
+}
 
 // Group
 
